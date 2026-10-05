@@ -1,13 +1,17 @@
 # Membangun APK TrashBot di cloud GitHub (tidak perlu install Flutter).
 #
 # Isi repositori yang dibutuhkan:
+#   pubspec.yaml               -> daftar dependensi (dipakai saat build)
 #   lib/                       -> main.dart, trash_bot.dart, detector.dart,
 #                                 robot_link.dart, robot_eyes.dart
 #   assets/models/trash.tflite -> model hasil ekspor (boleh file placeholder dulu)
 #   .github/workflows/build-apk.yml  -> file ini
 #
 # Kerangka proyek Android dibuat otomatis oleh `flutter create` di setiap build,
-# jadi pubspec.yaml dan folder android/ tidak perlu diunggah.
+# jadi folder android/ tidak wajib diunggah. Kalau android/ ada di repositori
+# (mis. hasil workflow "Generate android folder"), folder itu yang dipakai.
+# Kalau pubspec.yaml tidak ada, dependensi ditambahkan otomatis dengan
+# `flutter pub add`.
 
 name: Build APK
 
@@ -48,18 +52,39 @@ jobs:
           mkdir -p app/assets
           cp -r assets/. app/assets/
 
-      - name: Tambah dependensi dan aset
+      - name: Pakai folder android/ dari repositori (kalau ada)
+        run: |
+          if [ -d android ]; then
+            rm -rf app/android
+            cp -r android app/android
+            echo "Memakai android/ dari repositori"
+          else
+            echo "android/ tidak ada di repositori, memakai hasil flutter create"
+          fi
+
+      - name: Dependensi dan aset
         working-directory: app
         run: |
-          flutter pub add camera tflite_flutter web_socket_channel wakelock_plus
-          sed -i 's|^  uses-material-design: true|  uses-material-design: true\n  assets:\n    - assets/models/trash.tflite|' pubspec.yaml
+          if [ -f ../pubspec.yaml ]; then
+            echo "Memakai pubspec.yaml dari repositori"
+            cp ../pubspec.yaml pubspec.yaml
+          else
+            echo "pubspec.yaml tidak ada di repositori, menambah dependensi otomatis"
+            flutter pub add camera tflite_flutter web_socket_channel wakelock_plus
+            sed -i 's|^  uses-material-design: true|  uses-material-design: true\n  assets:\n    - assets/models/trash.tflite|' pubspec.yaml
+          fi
+          flutter pub get
           grep -n -A3 "uses-material-design" pubspec.yaml
 
       - name: Atur Android (izin kamera/internet, cleartext, minSdk 26)
         working-directory: app
         run: |
           MANIFEST=android/app/src/main/AndroidManifest.xml
-          sed -i 's|<application|<uses-permission android:name="android.permission.CAMERA"/>\n    <uses-permission android:name="android.permission.INTERNET"/>\n    <application android:usesCleartextTraffic="true"|' "$MANIFEST"
+          if grep -q 'usesCleartextTraffic' "$MANIFEST"; then
+            echo "Manifest sudah diatur, dilewati"
+          else
+            sed -i 's|<application|<uses-permission android:name="android.permission.CAMERA"/>\n    <uses-permission android:name="android.permission.INTERNET"/>\n    <application android:usesCleartextTraffic="true"|' "$MANIFEST"
+          fi
           sed -i 's|minSdk = flutter.minSdkVersion|minSdk = 26|' android/app/build.gradle.kts || true
           sed -i 's|minSdkVersion flutter.minSdkVersion|minSdkVersion 26|' android/app/build.gradle || true
           grep -n "uses-permission\|usesCleartext" "$MANIFEST"
