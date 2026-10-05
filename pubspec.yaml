@@ -1,0 +1,28 @@
+name: trashbot_app
+description: Robot pemilah sampah - HP sebagai mata (kamera + TFLite) yang mengendalikan ESP32 lewat Wi-Fi.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Rentang versi (bukan versi kaku) agar pub memilih rilis terbaru yang
+  # cocok dengan Flutter di perangkat/cloud kamu.
+  camera: ">=0.11.0 <1.0.0"            # stream frame kamera
+  tflite_flutter: ">=0.11.0 <1.0.0"    # inferensi model .tflite (butuh minSdk 26)
+  web_socket_channel: ^3.0.0           # koneksi WebSocket ke ESP32
+  wakelock_plus: ^1.2.0                # layar tidak mati saat robot bekerja
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ">=5.0.0 <7.0.0"
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/models/trash.tflite
