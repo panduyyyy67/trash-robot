@@ -1,1 +1,76 @@
+# Membangun APK TrashBot di cloud GitHub (tidak perlu install Flutter).
+#
+# Isi repositori yang dibutuhkan:
+#   lib/                       -> main.dart, trash_bot.dart, detector.dart,
+#                                 robot_link.dart, robot_eyes.dart
+#   assets/models/trash.tflite -> model hasil ekspor (boleh file placeholder dulu)
+#   .github/workflows/build-apk.yml  -> file ini
+#
+# Kerangka proyek Android dibuat otomatis oleh `flutter create` di setiap build,
+# jadi pubspec.yaml dan folder android/ tidak perlu diunggah.
 
+name: Build APK
+
+on:
+  workflow_dispatch:      # tombol "Run workflow" di tab Actions
+  push:
+    branches: [main]
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pastikan file model ada
+        run: |
+          test -f assets/models/trash.tflite || { echo "::error::File assets/models/trash.tflite belum diunggah"; exit 1; }
+          test -f lib/main.dart || { echo "::error::Folder lib/ belum diunggah"; exit 1; }
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Buat kerangka proyek Android
+        run: flutter create --platforms=android --org com.trashbot --project-name trashbot_app app
+
+      - name: Salin kode dan model
+        run: |
+          rm -rf app/lib
+          cp -r lib app/lib
+          mkdir -p app/assets
+          cp -r assets/. app/assets/
+
+      - name: Tambah dependensi dan aset
+        working-directory: app
+        run: |
+          flutter pub add camera tflite_flutter web_socket_channel wakelock_plus
+          sed -i 's|^  uses-material-design: true|  uses-material-design: true\n  assets:\n    - assets/models/trash.tflite|' pubspec.yaml
+          grep -n -A3 "uses-material-design" pubspec.yaml
+
+      - name: Atur Android (izin kamera/internet, cleartext, minSdk 26)
+        working-directory: app
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          sed -i 's|<application|<uses-permission android:name="android.permission.CAMERA"/>\n    <uses-permission android:name="android.permission.INTERNET"/>\n    <application android:usesCleartextTraffic="true"|' "$MANIFEST"
+          sed -i 's|minSdk = flutter.minSdkVersion|minSdk = 26|' android/app/build.gradle.kts || true
+          sed -i 's|minSdkVersion flutter.minSdkVersion|minSdkVersion 26|' android/app/build.gradle || true
+          grep -n "uses-permission\|usesCleartext" "$MANIFEST"
+          grep -n "minSdk" android/app/build.gradle* || true
+
+      - name: Build APK
+        working-directory: app
+        run: flutter build apk --release
+
+      - name: Unggah APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: trashbot-apk
+          path: app/build/app/outputs/flutter-apk/app-release.apk
